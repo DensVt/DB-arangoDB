@@ -1,7 +1,11 @@
+# На случай если будут проблемы с модулем pyArango.graphml
+# from arango import ArangoClient
+
+
 from pyArango.connection import *
-from PyArango.collection import Collectionm, Field
+from pyArango.collection import Collection, Field
 from pyArango.graph import Graph, EdgeDefinition
-from PyArango.graphml import GraphMLWriter
+from pyArango.graphml import GraphMLWriter
 import pandas as pd
 import requests
 import io
@@ -124,6 +128,52 @@ def get_vertices():
 def get_edges():
     edges = [e for e in my_graph.my_collection]
     return {'edges': edges}
+
+# Создаем новый маршрут для получения данных графа по ФИО
+
+
+@app.route('/graph/<name>')
+def get_graph(name):
+    # Получаем вершину имени по ФИО
+    vertex = my_graph.my_collection.fetchFirstExample({'name': name})
+    if not vertex:
+        return f'Не найдена вершина с именем {name}'
+    else:
+        vertex = vertex[0]
+
+    # Получаем все ребра, связанные с вершиной
+    edges = my_graph.my_edge_collection.fetchAll()
+    vertex_edges = [e for e in edges if e['_from'] == vetrex['id']]
+
+    # Создаем новый граф, содержащий только вершину и ее связи
+    new_graph = MyGraph({'new_graph'})
+    new_vertex = MyVertex(new_graph.my_collection)
+    new_vertex['id'] = vertex['id']
+    new_vertex['name'] = vertex['name']
+    new_vertex['age'] = vertex['age']
+    new_vertex['gender'] = vertex['gender']
+    new_vertex.save()
+    for e in vertex_edges:
+        source_vertex = new_graph.my_collection[e['_from']]
+        target_vertex = new_graph.my_collection[e['_to']]
+        new_edge = new_graph.my_edge_collection.createEdge(
+            'new_edge_collection', source_vertex, target_vertex)
+        new_edge.save()
+
+    # Возравщаем данные графа в выбранном формате
+    format = request.args.get('format', 'graphml')
+    if format == 'graphml':
+        writer = GraphMLWriter()
+        writer.addGraph(new_graph)
+        graphml_string = writer.to_string()
+        return Response(graphml_string, mimetype='text/xml')
+    elif format == 'json':
+        vertices = [v for v in new_graph.my_collection]
+        edges = [e for e in new_graph.my_edge_collection]
+        graph_data = {'vertices': vertices, 'edges': edges}
+        return graph_data
+    else:
+        return 'Указан недопустимый формат'
 
 
 # Запуск
